@@ -1,163 +1,125 @@
--- =====================
--- GUIDE SYSTEM (with navigation + per-player memory)
--- =====================
+-- guide.lua
+local guide_storage = minetest.get_mod_storage()
+local sections = minetest.deserialize(guide_storage:get_string("sections")) or {}
 
-local guides_path = minetest.get_worldpath() .. "/guides.txt"
-local guides = {
-    { name = "General", content = "This is the server guide.\nFollow the basics here." }
-}
+-- Save sections
+local function save_sections()
+    guide_storage:set_string("sections", minetest.serialize(sections))
+end
 
--- Memory: stores each player's last viewed section
-local player_last_section = {}
+-- Show guide formspec
+local function show_guide(playername, selected)
+    selected = selected or 1
+    local section_titles = {}
+    for i, sec in ipairs(sections) do
+        table.insert(section_titles, i .. ". " .. sec.title)
+    end
+    if #section_titles == 0 then
+        table.insert(section_titles, "<no sections>")
+    end
 
--- Load / Save
-local function load_guides()
-    local f = io.open(guides_path, "r")
-    if f then
-        local data = minetest.deserialize(f:read("*all"))
-        f:close()
-        if type(data) == "table" then
-            guides = data
+    local current_content = sections[selected] and sections[selected].content or ""
+    local current_title   = sections[selected] and sections[selected].title or ""
+
+    local is_editor = minetest.check_player_privs(playername, { gued = true })
+
+    local formspec = {
+        "formspec_version[4]",
+        "size[14,10]",
+        "label[0.2,0.2;Guide Sections:]",
+        "textlist[0.2,0.6;5,9;section_list;" .. table.concat(section_titles, ",") .. ";" .. selected .. "]",
+        "label[5.5,0.2;Content:]",
+        "textarea[5.5,0.6;8,7;content;;" .. minetest.formspec_escape(current_content) .. "]",
+    }
+
+    if is_editor then
+        table.insert(formspec, "field[5.5,7.8;6,1;title;Title;" .. minetest.formspec_escape(current_title) .. "]")
+        table.insert(formspec, "button[12,7.8;1.5,1;save;Save]")
+        table.insert(formspec, "button[5.5,9;2,1;add;Add+]")
+        table.insert(formspec, "button[8,9;2,1;delete;Delete]")
+    else
+        table.insert(formspec, "button[12,8.5;1.5,1;done;Done]")
+    end
+
+    minetest.show_formspec(playername, "guide:main", table.concat(formspec, ""))
+end
+
+-- Handle form interactions
+minetest.register_on_player_receive_fields(function(player, formname, fields)
+    if formname ~= "guide:main" then return end
+    local name = player:get_player_name()
+
+    -- Handle section selection
+    if fields.section_list then
+        local event = minetest.explode_textlist_event(fields.section_list)
+        if event.type == "CHG" then
+            show_guide(name, event.index)
+            return
         end
     end
-end
 
-local function save_guides()
-    local f = io.open(guides_path, "w")
-    if f then
-        f:write(minetest.serialize(guides))
-        f:close()
-    end
-end
+    -- Handle editor actions
+    if minetest.check_player_privs(name, { gued = true }) then
+        -- Save edits
+        if fields.save and fields.title and fields.content then
+            for i, sec in ipairs(sections) do
+                if (fields.title == sec.title) or (fields.content == sec.content) then
+                    sections[i].title = fields.title
+                    sections[i].content = fields.content
+                    save_sections()
+                    break
+                end
+            end
+            show_guide(name)
+            return
+        end
 
-load_guides()
+        -- Add new section
+        if fields.add then
+            table.insert(sections, { title = "New Section", content = "" })
+            save_sections()
+            show_guide(name, #sections)
+            return
+        end
 
--- Privilege
-minetest.register_privilege("gued", {
-    description = "Can edit the server guide",
-    give_to_admin = true
-})
-
--- Show Guide Menu
-local function show_guide(player_name, section_index)
-    section_index = section_index or 1
-    local section = guides[section_index]
-    if not section then section = { name = "Unnamed", content = "" } end
-
-    -- Save last section for this player
-    player_last_section[player_name] = section_index
-
-    -- Top buttons for direct section jump
-    local buttons = ""
-    local x = 0.5
-    for i, sec in ipairs(guides) do
-        buttons = buttons .. "button[" .. x .. ",0.5;2.5,1;sec_" .. i .. ";" ..
-            minetest.formspec_escape(sec.name) .. "]"
-        x = x + 2.7
-    end
-    if minetest.check_player_privs(player_name, { gued = true }) then
-        buttons = buttons .. "button[" .. x .. ",0.5;2,1;add_section;+]"
+        -- Delete section (with confirmation)
+        if fields.delete then
+            minetest.show_formspec(name, "guide:confirm_delete",
+                "formspec_version[4]size[6,3]" ..
+                "label[0.5,0.5;Are you sure you want to delete this section?]" ..
+                "button[1,2;2,1;yes;Yes]" ..
+                "button[3,2;2,1;no;No]"
+            )
+            return
+        end
     end
 
-    -- Navigation arrows
-    local nav = ""
-    if section_index > 1 then
-        nav = nav .. "button[0.5,8;2,1;prev_section;<< Prev]"
+    if fields.done then
+        minetest.close_formspec(name, "guide:main")
     end
-    if section_index < #guides then
-        nav = nav .. "button[11.5,8;2,1;next_section;Next >>]"
+end)
+
+-- Confirm delete dialog
+minetest.register_on_player_receive_fields(function(player, formname, fields)
+    if formname ~= "guide:confirm_delete" then return end
+    local name = player:get_player_name()
+    if fields.yes then
+        table.remove(sections, #sections)
+        save_sections()
     end
+    show_guide(name)
+end)
 
-    -- Base formspec
-    local formspec = "formspec_version[4]size[14,9]" ..
-        buttons ..
-        "field[0.5,1.8;6,1;section_name;Section;" .. minetest.formspec_escape(section.name) .. "]" ..
-        "textarea[0.5,3;13,5;guide;Content;" .. minetest.formspec_escape(section.content) .. "]" ..
-        nav
-
-    if minetest.check_player_privs(player_name, { gued = true }) then
-        formspec = formspec ..
-            "button[4,8;2,1;delete_section;Delete]" ..
-            "button[7,8;2,1;save_guide;Save]"
-    else
-        formspec = formspec .. "button_exit[6,8;2,1;close;Close]"
-    end
-
-    minetest.show_formspec(player_name, "server_tools:guide_" .. section_index, formspec)
-end
-
--- Command
+-- /guide command
 minetest.register_chatcommand("guide", {
     description = "Open the server guide",
     func = function(name)
-        local section = player_last_section[name] or 1
-        show_guide(name, section)
+        show_guide(name, 1)
     end,
 })
 
--- Confirmation Popup
-local function confirm_delete(player_name, section_index)
-    local sec = guides[section_index]
-    if not sec then return end
-    local formspec = "formspec_version[4]size[8,3]" ..
-        "label[0.5,0.5;Delete section '" .. minetest.formspec_escape(sec.name) .. "'?]" ..
-        "button[1,2;2,1;confirm_yes;Yes]" ..
-        "button[5,2;2,1;confirm_no;No]"
-    minetest.show_formspec(player_name, "server_tools:confirm_" .. section_index, formspec)
-end
-
--- Handle Forms
-minetest.register_on_player_receive_fields(function(player, formname, fields)
-    local name = player:get_player_name()
-
-    -- Main Guide
-    local section_index = tonumber(formname:match("^server_tools:guide_(%d+)$"))
-    if section_index then
-        local section = guides[section_index]
-        if fields.save_guide and minetest.check_player_privs(name, { gued = true }) then
-            if fields.section_name and fields.section_name ~= "" then
-                section.name = fields.section_name
-            end
-            if fields.guide then
-                section.content = fields.guide
-            end
-            save_guides()
-            minetest.chat_send_player(name, "Guide section updated: " .. section.name)
-            show_guide(name, section_index)
-
-        elseif fields.add_section and minetest.check_player_privs(name, { gued = true }) then
-            table.insert(guides, { name = "New Section", content = "Write here..." })
-            save_guides()
-            show_guide(name, #guides)
-
-        elseif fields.delete_section and minetest.check_player_privs(name, { gued = true }) then
-            confirm_delete(name, section_index)
-
-        elseif fields.prev_section then
-            show_guide(name, section_index - 1)
-
-        elseif fields.next_section then
-            show_guide(name, section_index + 1)
-
-        else
-            for i, sec in ipairs(guides) do
-                if fields["sec_" .. i] then
-                    show_guide(name, i)
-                end
-            end
-        end
-    end
-
-    -- Confirmation Window
-    local confirm_index = tonumber(formname:match("^server_tools:confirm_(%d+)$"))
-    if confirm_index then
-        if fields.confirm_yes and minetest.check_player_privs(name, { gued = true }) then
-            local removed = table.remove(guides, confirm_index)
-            save_guides()
-            minetest.chat_send_player(name, "Deleted section: " .. removed.name)
-            show_guide(name, 1)
-        elseif fields.confirm_no then
-            show_guide(name, confirm_index)
-        end
-    end
-end)
+-- Register priv
+minetest.register_privilege("gued", {
+    description = "Can edit the guide sections",
+    give_to_singleplayer = false,
+})
