@@ -2,148 +2,205 @@
 local storage = minetest.get_mod_storage()
 local reports = minetest.deserialize(storage:get_string("reports")) or {}
 
+-- save reports
 local function save_reports()
     storage:set_string("reports", minetest.serialize(reports))
 end
 
--- Show report list
-local function show_report_list(playername, for_staff)
-    local entries = {}
-    for i, r in ipairs(reports) do
-        if for_staff or r.author == playername then
-            table.insert(entries, i .. ". " .. r.title .. " [" .. r.status .. "] by " .. r.author)
+-- staff privilege
+minetest.register_privilege("ra", {
+    description = "Can manage and comment on player reports",
+    give_to_singleplayer = false,
+})
+
+-- helper: check if player can access report
+local function can_access_report(name, report)
+    if report.author == name then
+        return true
+    end
+    if minetest.check_player_privs(name, {ra = true}) then
+        return true
+    end
+    return false
+end
+
+-- main report menu (staff only)
+local function show_reports_menu(name)
+    local formspec = "size[8,9]" ..
+        "label[0,0;All Reports]" ..
+        "button_exit[7,0;1,1;close;X]"
+
+    local i = 0
+    for id, report in pairs(reports) do
+        if i < 10 then
+            formspec = formspec ..
+                "button[0,"..(1+i)..";6,1;view_"..id..";"..minetest.formspec_escape(report.title).." ("..report.status..")]"
+            i = i + 1
         end
     end
-    if #entries == 0 then
-        table.insert(entries, "<no reports>")
-    end
 
-    local formspec =
-        "formspec_version[4]size[12,8]" ..
-        "label[0.5,0.5;Reports]" ..
-        "textlist[0.5,1;11,6;report_list;" .. table.concat(entries, ",") .. ";0]" ..
-        "button[5,7;2,1;new;New Report]"
-
-    minetest.show_formspec(playername, "custom_commands:report_list", formspec)
+    minetest.show_formspec(name, "reports:main", formspec)
 end
 
--- Show single report
-local function show_report(playername, idx)
-    local report = reports[idx]
-    if not report then return end
+-- author report menu
+local function show_my_reports_menu(name)
+    local formspec = "size[8,9]" ..
+        "label[0,0;My Reports]" ..
+        "button_exit[7,0;1,1;close;X]"
 
-    local comments_text = ""
-    for _, c in ipairs(report.comments or {}) do
-        comments_text = comments_text .. c.author .. ": " .. c.text .. "\\n"
-    end
-
-    local formspec =
-        "formspec_version[4]size[12,9]" ..
-        "label[0.5,0.5;Report #" .. idx .. " - " .. report.title .. " (" .. report.status .. ")]" ..
-        "textarea[0.5,1;11,4;;;" .. minetest.formspec_escape(report.content) .. "]" ..
-        "label[0.5,5;Comments:]" ..
-        "textarea[0.5,5.5;11,2;;;" .. minetest.formspec_escape(comments_text) .. "]" ..
-        "field[0.5,7.8;8,1;comment;Add comment;]" ..
-        "button[8.8,7.6;2,1;add_comment;Add]" ..
-        "button[0.5,8.6;2,1;back;Back]"
-
-    if minetest.check_player_privs(playername, {report = true}) then
-        formspec = formspec .. "button[3,8.6;2,1;close;Close]"
-    end
-
-    minetest.show_formspec(playername, "custom_commands:report_view_" .. idx, formspec)
-end
-
--- Show new report form
-local function show_new_report(playername)
-    local formspec =
-        "formspec_version[4]size[10,7]" ..
-        "label[0.5,0.5;New Report]" ..
-        "field[0.5,1.5;9,1;title;Title;]" ..
-        "textarea[0.5,2.5;9,3;content;Content;]" ..
-        "button[3.5,6;3,1;submit;Submit]"
-
-    minetest.show_formspec(playername, "custom_commands:new_report", formspec)
-end
-
--- Handle formspecs
-minetest.register_on_player_receive_fields(function(player, formname, fields)
-    local name = player:get_player_name()
-
-    -- Report list
-    if formname == "custom_commands:report_list" then
-        if fields.new then
-            show_new_report(name)
-            return
-        end
-        if fields.report_list then
-            local event = minetest.explode_textlist_event(fields.report_list)
-            if event.type == "DCL" then
-                local idx = tonumber(event.index)
-                show_report(name, idx)
+    local i = 0
+    for id, report in pairs(reports) do
+        if report.author == name then
+            if i < 10 then
+                formspec = formspec ..
+                    "button[0,"..(1+i)..";6,1;view_"..id..";"..minetest.formspec_escape(report.title).." ("..report.status..")]"
+                i = i + 1
             end
         end
     end
 
-    -- New report
-    if formname == "custom_commands:new_report" then
-        if fields.submit and fields.title and fields.content then
-            table.insert(reports, {
-                author = name,
-                title = fields.title,
-                content = fields.content,
-                comments = {},
-                status = "open",
-            })
-            save_reports()
-            minetest.chat_send_player(name, "Report submitted!")
-            show_report_list(name, minetest.check_player_privs(name, {report = true}))
+    minetest.show_formspec(name, "reports:my", formspec)
+end
+
+-- single report view
+local function show_single_report(name, id)
+    local report = reports[id]
+    if not report then return end
+
+    if not can_access_report(name, report) then
+        minetest.chat_send_player(name, "You don't have access to this report.")
+        return
+    end
+
+    local is_staff = minetest.check_player_privs(name, {ra = true})
+    local is_author = (report.author == name)
+    local comments = table.concat(report.comments, "\n")
+
+    local formspec =
+        "size[8,9]" ..
+        "label[0,0;Report by "..report.author.."]" ..
+        "textarea[0.2,0.5;7.5,2;;"..minetest.formspec_escape(report.text)..";]" ..
+        "label[0,2.8;Status: "..report.status.."]" ..
+        "textarea[0.2,3.3;7.5,2;comments;Comments;"..minetest.formspec_escape(comments).."]" ..
+        "button_exit[6.5,8;1.5,1;back;Back]"
+
+    if is_staff then
+        if report.status == "open" then
+            formspec = formspec .. "button[0,8;2,1;close_"..id..";Close]"
+        else
+            formspec = formspec .. "button[0,8;2,1;open_"..id..";Reopen]"
         end
     end
 
-    -- Report view
-    if formname:find("custom_commands:report_view_") == 1 then
-        local idx = tonumber(formname:match("_(%d+)$"))
-        local report = reports[idx]
-        if not report then return end
+    if is_staff or is_author then
+        formspec = formspec ..
+            "field[0.3,6.5;6,1;add_comment;Add comment;]" ..
+            "button[6,6.2;2,1;addc_"..id..";Add]"
+    end
+
+    minetest.show_formspec(name, "reports:view_"..id, formspec)
+end
+
+-- handle forms
+minetest.register_on_player_receive_fields(function(player, formname, fields)
+    local name = player:get_player_name()
+
+    -- staff reports list
+    if formname == "reports:main" then
+        for field in pairs(fields) do
+            if field:sub(1,5) == "view_" then
+                local id = tonumber(field:sub(6))
+                show_single_report(name, id)
+                return true
+            end
+        end
+    end
+
+    -- author report list
+    if formname == "reports:my" then
+        for field in pairs(fields) do
+            if field:sub(1,5) == "view_" then
+                local id = tonumber(field:sub(6))
+                show_single_report(name, id)
+                return true
+            end
+        end
+    end
+
+    -- single report
+    if formname:sub(1,13) == "reports:view_" then
+        local id = tonumber(formname:sub(14))
+        local report = reports[id]
+        if not report then return true end
 
         if fields.back then
-            show_report_list(name, minetest.check_player_privs(name, {report = true}))
-            return
+            if minetest.check_player_privs(name, {ra = true}) then
+                show_reports_menu(name)
+            else
+                show_my_reports_menu(name)
+            end
+            return true
         end
-        if fields.add_comment and fields.comment and fields.comment ~= "" then
-            table.insert(report.comments, {author = name, text = fields.comment})
-            save_reports()
-            show_report(name, idx)
-            return
-        end
-        if fields.close and minetest.check_player_privs(name, {report = true}) then
+
+        if fields["close_"..id] and minetest.check_player_privs(name, {ra = true}) then
             report.status = "closed"
             save_reports()
-            show_report(name, idx)
-            return
+            show_single_report(name, id)
+            return true
+        end
+
+        if fields["open_"..id] and minetest.check_player_privs(name, {ra = true}) then
+            report.status = "open"
+            save_reports()
+            show_single_report(name, id)
+            return true
+        end
+
+        if fields["addc_"..id] and (minetest.check_player_privs(name, {ra = true}) or report.author == name) then
+            if fields.add_comment and fields.add_comment ~= "" then
+                table.insert(report.comments, name..": "..fields.add_comment)
+                save_reports()
+                show_single_report(name, id)
+            end
+            return true
         end
     end
 end)
 
--- Commands
+-- create report
 minetest.register_chatcommand("report", {
-    description = "File a new report",
-    func = function(name)
-        show_new_report(name)
-    end,
+    description = "Create a new report",
+    func = function(name, param)
+        if param == "" then
+            return false, "Usage: /report <your issue>"
+        end
+        local id = #reports + 1
+        reports[id] = {
+            id = id,
+            author = name,
+            title = "Report #"..id,
+            text = param,
+            status = "open",
+            comments = {}
+        }
+        save_reports()
+        return true, "Report created with ID #"..id
+    end
 })
 
+-- staff view all reports
 minetest.register_chatcommand("reports", {
-    description = "View reports",
+    description = "View all reports (staff only)",
+    privs = {ra = true},
     func = function(name)
-        local is_staff = minetest.check_player_privs(name, {report = true})
-        show_report_list(name, is_staff)
-    end,
+        show_reports_menu(name)
+    end
 })
 
--- Privilege for staff
-minetest.register_privilege("report", {
-    description = "Can view and manage all reports",
-    give_to_singleplayer = false,
+-- author view their own reports
+minetest.register_chatcommand("vr", {
+    description = "View your reports",
+    func = function(name)
+        show_my_reports_menu(name)
+    end
 })
