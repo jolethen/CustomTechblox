@@ -1,4 +1,4 @@
--- report.lua : interactive report system with persistence
+-- report.lua : simplified interactive report system with persistence
 
 local reports = {}
 local report_file = minetest.get_worldpath().."/reports.json"
@@ -44,9 +44,9 @@ local function show_reports_menu(name)
     local formspec = "size[8,9]label[0,0;All Reports]"
     local y = 0.5
     for id, r in pairs(reports) do
-        if minetest.check_player_privs(name, {ra = true}) then
+        if r.status == "open" and minetest.check_player_privs(name, {ra = true}) then
             formspec = formspec ..
-                "button[0,"..y..";7.5,0.7;view_staff_"..id..";"..minetest.formspec_escape(r.author.." - "..r.status).."]"
+                "button[0,"..y..";7.5,0.7;view_staff_"..id..";"..minetest.formspec_escape(r.author.." - "..r.text).."]"
             y = y + 0.8
         end
     end
@@ -57,9 +57,9 @@ local function show_my_reports_menu(name)
     local formspec = "size[8,9]label[0,0;My Reports]"
     local y = 0.5
     for id, r in pairs(reports) do
-        if r.author == name then
+        if r.author == name and r.status == "open" then
             formspec = formspec ..
-                "button[0,"..y..";7.5,0.7;view_author_"..id..";"..minetest.formspec_escape(r.status).."]"
+                "button[0,"..y..";7.5,0.7;view_author_"..id..";"..minetest.formspec_escape(r.text).."]"
             y = y + 0.8
         end
     end
@@ -78,29 +78,15 @@ local function show_single_report(name, id, context)
     end
 
     local is_staff = minetest.check_player_privs(name, {ra = true})
-    local is_author = (report.author == name)
-    local comments = table.concat(report.comments or {}, "\n")
 
     local formspec =
-        "size[8,9]" ..
+        "size[8,6]" ..
         "label[0,0;Report by "..minetest.formspec_escape(report.author).."]" ..
-        "textarea[0.2,0.5;7.5,2;;"..minetest.formspec_escape(report.text)..";]" ..
-        "label[0,2.8;Status: "..report.status.."]" ..
-        "textarea[0.2,3.3;7.5,2;comments;Comments;"..minetest.formspec_escape(comments).."]" ..
-        "button_exit[6.5,8;1.5,1;back_"..context..";Back]"
+        "textarea[0.2,0.5;7.5,3;;"..minetest.formspec_escape(report.text)..";]" ..
+        "button_exit[6.5,5;1.5,1;back_"..context..";Back]"
 
     if is_staff then
-        if report.status == "open" then
-            formspec = formspec .. "button[0,8;2,1;close_"..id..";Close]"
-        else
-            formspec = formspec .. "button[0,8;2,1;open_"..id..";Reopen]"
-        end
-    end
-
-    if is_staff or is_author then
-        formspec = formspec ..
-            "field[0.3,6.5;6,1;add_comment;Add comment;]" ..
-            "button[6,6.2;2,1;addc_"..id..";Add]"
+        formspec = formspec .. "button[0,5;2,1;close_"..id..";Close]"
     end
 
     minetest.show_formspec(name, "reports:view_"..context.."_"..id, formspec)
@@ -151,23 +137,11 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
         if fields["close_"..id] and minetest.check_player_privs(name, {ra = true}) then
             report.status = "closed"
             save_reports()
-            show_single_report(name, id, context)
-            return true
-        end
-
-        if fields["open_"..id] and minetest.check_player_privs(name, {ra = true}) then
-            report.status = "open"
-            save_reports()
-            show_single_report(name, id, context)
-            return true
-        end
-
-        if fields["addc_"..id] and (minetest.check_player_privs(name, {ra = true}) or report.author == name) then
-            if fields.add_comment and fields.add_comment ~= "" then
-                report.comments = report.comments or {}
-                table.insert(report.comments, name..": "..fields.add_comment)
-                save_reports()
-                show_single_report(name, id, context)
+            -- Go back to menu
+            if context == "staff" then
+                show_reports_menu(name)
+            else
+                show_my_reports_menu(name)
             end
             return true
         end
@@ -209,8 +183,7 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
         reports[new_id] = {
             author = name,
             text = fields.report_text,
-            status = "open",
-            comments = {}
+            status = "open"
         }
         save_reports()
         minetest.chat_send_player(name, "✅ Report submitted with ID "..new_id)
