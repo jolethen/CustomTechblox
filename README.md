@@ -13,4 +13,9 @@ This function is protected from server crashes itself through the json file.
 
 Dont delete any fole saved in the world folder as it'll delete ur records/logs
 
-Its a highly customisable mod, u can add anything to it, just go to *init.lua* and type
+Its a highly customisable mod, u can add anything to it, just go to *init.lua* and type *dofile(modpath .. "/name_of_file.lua"* but it must have .lua extension.
+
+Make sure to enjoy this mod as you like, and make sure to join our server in luanti, namely **Techblox**
+
+Made by,
+jolethen.
