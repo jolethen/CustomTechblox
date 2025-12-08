@@ -1,5 +1,5 @@
 -- =====================
--- RULES SYSTEM (FULL + READY)
+-- RULES SYSTEM (FIXED)
 -- =====================
 
 local rules_path = minetest.get_worldpath() .. "/rules.txt"
@@ -20,7 +20,6 @@ local function load_rules()
     end
 end
 
--- Save rules
 local function save_rules()
     local f = io.open(rules_path, "w")
     if f then
@@ -31,27 +30,28 @@ end
 
 load_rules()
 
--- Priv
 minetest.register_privilege("rulemkr", {
     description = "Can edit the rules",
     give_to_admin = true
 })
 
--- /rules command
+-- /rules
 minetest.register_chatcommand("rules", {
     description = "Show server rules",
     func = function(name)
         minetest.show_formspec(name, "server_tools:rules",
             "formspec_version[4]size[10,8]" ..
-            "textarea[0.5,0.5;9,6;rules;Server Rules;" .. minetest.formspec_escape(rules_text) .. "]" ..
-            "button[4,7;2,1;done;Done]")
+            "textarea[0.5,0.5;9,6;rules;Server Rules;" ..
+                minetest.formspec_escape(rules_text) .. "]" ..
+            "button[4,7;2,1;done;Done]"
+        )
     end
 })
 
--- /frul (force rules update)
+-- /frul
 minetest.register_chatcommand("frul", {
     privs = { rulemkr = true },
-    description = "Force rules update (all players see popup next login)",
+    description = "Force rules update",
     func = function(name)
         rules_version = rules_version + 1
         save_rules()
@@ -60,34 +60,42 @@ minetest.register_chatcommand("frul", {
     end
 })
 
--- Auto popup on first join or when updated
+-- Auto popup
 minetest.register_on_joinplayer(function(player)
     local name = player:get_player_name()
+
+    -- Only show if not yet accepted
     if seen_rules[name] ~= rules_version then
         minetest.after(1, function()
             minetest.show_formspec(name, "server_tools:rules",
                 "formspec_version[4]size[10,8]" ..
                 "textarea[0.5,0.5;9,6;rules;Server Rules;" ..
-                minetest.formspec_escape(rules_text) .. "]" ..
-                "button[4,7;2,1;done;Done]")
+                    minetest.formspec_escape(rules_text) .. "]" ..
+                "button[4,7;2,1;done;Done]"
+            )
         end)
-        seen_rules[name] = rules_version
     end
 end)
 
--- Detect when rules panel is closed → open changelog (calls global show_changelog)
+-- Handle close → mark “seen” → open changelog
 minetest.register_on_player_receive_fields(function(player, formname, fields)
     if formname ~= "server_tools:rules" then return end
     local name = player:get_player_name()
 
     if fields.done then
+
+        -- Mark rules as seen NOW
+        seen_rules[name] = rules_version
+
+        -- Close window
         minetest.close_formspec(name, "server_tools:rules")
 
-        -- Open changelog automatically (keep small delay for safety)
-        minetest.after(0.2, function()
+        -- Open changelog (if global function exists)
+        minetest.after(0.15, function()
             if type(show_changelog) == "function" then
-                -- call the global function exported by changelog.lua
-                pcall(function() show_changelog(name, 1) end)
+                pcall(function()
+                    show_changelog(name, 1)
+                end)
             end
         end)
     end
