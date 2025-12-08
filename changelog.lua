@@ -1,21 +1,21 @@
 -- changelog.lua
+-- Minimal-safe changelog system matching guide.lua style
+
 local ch_storage = minetest.get_mod_storage()
-local changelog_sections = minetest.deserialize(ch_storage:get_string("sections")) or {}
+local changelog_sections = minetest.deserialize(ch_storage:get_string("changelog_sections")) or {}
 
 -- Save sections
 local function save_changelog()
-    ch_storage:set_string("sections", minetest.serialize(changelog_sections))
+    ch_storage:set_string("changelog_sections", minetest.serialize(changelog_sections))
 end
 
--- Show changelog formspec
-local function show_changelog(playername, selected)
+-- Make this a global function so other files (rules.lua) can call it
+function show_changelog(playername, selected)
     selected = selected or 1
     local section_titles = {}
-
     for i, sec in ipairs(changelog_sections) do
         table.insert(section_titles, i .. ". " .. sec.title)
     end
-
     if #section_titles == 0 then
         table.insert(section_titles, "<no sections>")
     end
@@ -46,7 +46,6 @@ local function show_changelog(playername, selected)
     minetest.show_formspec(playername, "cl:main", table.concat(formspec, ""))
 end
 
-
 -- Handle changelog interactions
 minetest.register_on_player_receive_fields(function(player, formname, fields)
     if formname ~= "cl:main" then return end
@@ -66,6 +65,7 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 
         if fields.save and fields.title and fields.content then
             for i, sec in ipairs(changelog_sections) do
+                -- preserve your existing matching logic (title/content match)
                 if (fields.title == sec.title) or (fields.content == sec.content) then
                     changelog_sections[i].title = fields.title
                     changelog_sections[i].content = fields.content
@@ -100,7 +100,6 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
     end
 end)
 
-
 -- Confirm delete dialog
 minetest.register_on_player_receive_fields(function(player, formname, fields)
     if formname ~= "cl:confirm_delete" then return end
@@ -114,8 +113,7 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
     show_changelog(name)
 end)
 
-
--- Register /changelog command
+-- /changelog command
 minetest.register_chatcommand("changelog", {
     description = "Open the changelog",
     func = function(name)
