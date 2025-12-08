@@ -1,5 +1,5 @@
 -- =====================
--- RULES SYSTEM
+-- RULES SYSTEM (FULL + READY)
 -- =====================
 
 local rules_path = minetest.get_worldpath() .. "/rules.txt"
@@ -44,7 +44,7 @@ minetest.register_chatcommand("rules", {
         minetest.show_formspec(name, "server_tools:rules",
             "formspec_version[4]size[10,8]" ..
             "textarea[0.5,0.5;9,6;rules;Server Rules;" .. minetest.formspec_escape(rules_text) .. "]" ..
-            "button_exit[4,7;2,1;done;Done]")
+            "button[4,7;2,1;done;Done]")
     end
 })
 
@@ -67,9 +67,28 @@ minetest.register_on_joinplayer(function(player)
         minetest.after(1, function()
             minetest.show_formspec(name, "server_tools:rules",
                 "formspec_version[4]size[10,8]" ..
-                "textarea[0.5,0.5;9,6;rules;Server Rules;" .. minetest.formspec_escape(rules_text) .. "]" ..
-                "button_exit[4,7;2,1;done;Done]")
-            seen_rules[name] = rules_version
+                "textarea[0.5,0.5;9,6;rules;Server Rules;" ..
+                minetest.formspec_escape(rules_text) .. "]" ..
+                "button[4,7;2,1;done;Done]")
+        end)
+        seen_rules[name] = rules_version
+    end
+end)
+
+-- Detect when rules panel is closed → open changelog (calls global show_changelog)
+minetest.register_on_player_receive_fields(function(player, formname, fields)
+    if formname ~= "server_tools:rules" then return end
+    local name = player:get_player_name()
+
+    if fields.done then
+        minetest.close_formspec(name, "server_tools:rules")
+
+        -- Open changelog automatically (keep small delay for safety)
+        minetest.after(0.2, function()
+            if type(show_changelog) == "function" then
+                -- call the global function exported by changelog.lua
+                pcall(function() show_changelog(name, 1) end)
+            end
         end)
     end
 end)
