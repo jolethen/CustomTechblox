@@ -7,11 +7,12 @@ This function is protected from server crashes itself through the json file.
 3. **guide**- Can have 100+ sections players with *gued* privs can edit the guide
 4. **rules**-Popus up rule menu for any new player, when there is something added to the rules do */frul* and everyone on there next join will get rule screen popup
 5. **events**- Shows current events going on inside the server, can be edited by people with *eved* privs
-
+6. **changelog**- U can use this to add updates changelog, players can view it, u must have *ced* privs
+7. **chatmsgs** Pops up a message for player upon joining and also adds ability to send nessages after a sent interval, requires *med* privs
 
 # Important
 
-Dont delete any fole saved in the world folder as it'll delete ur records/logs
+Dont delete any file saved in the world folder as it'll delete ur records/logs
 
 Its a highly customisable mod, u can add anything to it, just go to *init.lua* and type *dofile(modpath .. "/name_of_file.lua"* but it must have .lua extension.
 
