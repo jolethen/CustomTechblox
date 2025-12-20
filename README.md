@@ -10,6 +10,9 @@ This function is protected from server crashes itself through the json file.
 6. **changelog**- U can use this to add updates changelog, players can view it, u must have *ced* privs
 7. **chatmsgs** Pops up a message for player upon joining and also adds ability to send nessages after a sent interval, requires *med* privs
 
+# Updates-
+
+**20 December 2025**, Added /changelog, /chatmsgs
 # Important
 
 Dont delete any file saved in the world folder as it'll delete ur records/logs
